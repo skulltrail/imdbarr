@@ -1,0 +1,11 @@
+services:
+  imdbarr:
+    build: .
+    container_name: imdbarr
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - PORT=3000
+      - BASE_URL=${BASE_URL:-http://localhost:3000}

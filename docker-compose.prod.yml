@@ -1,0 +1,12 @@
+# Use this on your homelab server - pulls pre-built images from GitHub
+services:
+  imdbarr:
+    image: ghcr.io/skulltrail/imdbarr:latest
+    container_name: imdbarr
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - PORT=3000
+      - BASE_URL=${BASE_URL:-http://localhost:3000}

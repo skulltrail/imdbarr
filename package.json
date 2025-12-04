@@ -1,0 +1,37 @@
+{
+  "name": "imdbarr",
+  "version": "0.1.0",
+  "description": "IMDB API for *arr - converts IMDB watchlists to Sonarr-compatible custom list format",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src/**/*.ts"
+  },
+  "keywords": [
+    "imdb",
+    "sonarr",
+    "watchlist",
+    "tvdb",
+    "api"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "express": "^4.18.2",
+    "node-cache": "^5.1.2",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.1",
+    "@typescript-eslint/parser": "^8.48.1",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.7.4",
+    "tsx": "^4.6.0",
+    "typescript": "^5.3.2"
+  }
+}
