@@ -178,6 +178,33 @@ Then use: `https://yourserver.com/imdb/watchlist/ur12345678`
 
 ## Troubleshooting
 
+### Testing Locally
+
+Use the included `check.ts` script to test IMDB parsing without starting the server:
+
+```bash
+# Test with your user ID
+npx tsx scripts/check.ts ur12345678
+
+# Or use the default test user
+npx tsx scripts/check.ts
+```
+
+This script will:
+
+- Fetch your watchlist HTML (or use cached version from `/tmp/`)
+- Parse all items and show type detection
+- Display counts for TV shows, movies, and other content types
+- List all parsed titles by category
+
+**Tip**: If you get 503 errors, manually save the HTML first:
+
+```bash
+curl -H "User-Agent: Mozilla/5.0" \
+  "https://www.imdb.com/user/ur12345678/watchlist?view=detail" \
+  > /tmp/watchlist_ur12345678.html
+```
+
 ### "TMDB API key not configured"
 
 Set the `TMDB_API_KEY` environment variable.
@@ -186,11 +213,11 @@ Set the `TMDB_API_KEY` environment variable.
 
 - Check that your watchlist is public
 - Verify your user ID is correct (starts with `ur`)
-- Try `/watchlist/:userId/tv` to see parsed TV items
+- Try `/watchlist/:userId` to see all parsed items
 
 ### Missing shows
 
-Some very new or obscure shows may not have TVDB IDs. Check `/watchlist/:userId/tv` to see what was found.
+Some very new or obscure shows may not have TVDB IDs. Check `/watchlist/:userId/tv` to see what TV shows were found, or `/watchlist/:userId` to see all items.
 
 ## License
 
