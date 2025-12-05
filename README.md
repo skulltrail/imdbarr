@@ -1,14 +1,15 @@
 # imdbarr
 
-A lightweight API that bridges the gap between IMDB watchlists and \*arr apps. While Radarr natively supports IMDB watchlists, Sonarr does not. This API (imdbarr) converts your IMDB watchlist (or any public IMDB list) to the format that Sonarr's Custom List feature expects.
+A lightweight API that bridges the gap between IMDB watchlists and Sonarr. Converts your IMDB watchlist or any public IMDB list to the format that Sonarr's Custom List feature expects.
 
 ## Features
 
-- 📺 **Automatic TV Show Detection** - Filters movies from TV shows automatically
+- 📺 **Sonarr Integration** - TV shows with TVDB IDs in Sonarr-compatible format
 - 🔄 **Real-time Sync** - Fetches directly from IMDB (no database required)
-- 🌐 **Multi-user Support** - Works with any public IMDB watchlist
-- 💾 **Smart Caching** - Caches TVDB lookups for 24 hours
-- 🎯 **Direct Sonarr Integration** - Returns exactly what Sonarr expects
+- 🌐 **Multi-user Support** - Works with any public IMDB watchlist or list
+- 💾 **Smart Caching** - Caches TMDB lookups for 24 hours
+- 🎯 **Direct Integration** - Returns exactly what Sonarr expects
+- 📊 **Complete Metadata** - Access full IMDB data via base endpoints
 
 ## Quick Start
 
@@ -45,15 +46,34 @@ bun start
 
 ## API Endpoints
 
-| Endpoint                        | Description                                       |
-| ------------------------------- | ------------------------------------------------- |
-| `GET /`                         | API documentation                                 |
-| `GET /health`                   | Health check with cache stats                     |
-| `GET /watchlist/:userId`        | All items from watchlist (movies, TV shows, etc.) |
-| `GET /watchlist/:userId/tv`     | TV shows only (filtered from watchlist)           |
-| `GET /watchlist/:userId/movies` | Movies only (filtered from watchlist)             |
-| `GET /list/:listId`             | IMDB custom list in Sonarr format (TV only)       |
-| `POST /admin/cache/clear`       | Clear cached TMDB lookups                         |
+### Endpoint Structure
+
+All endpoints follow a consistent pattern:
+
+- **Base endpoints** (`/watchlist/:userId`, `/list/:listId`) - Return complete IMDB metadata for all content types
+- **`/tv` filter** - Returns only TV shows in Sonarr-compatible format (TVDB IDs)
+
+### Watchlist Endpoints
+
+| Endpoint                    | Description                       | Format         |
+| --------------------------- | --------------------------------- | -------------- |
+| `GET /watchlist/:userId`    | All items with complete metadata  | JSON (wrapped) |
+| `GET /watchlist/:userId/tv` | TV shows only (Sonarr-compatible) | JSON array     |
+
+### List Endpoints
+
+| Endpoint               | Description                       | Format         |
+| ---------------------- | --------------------------------- | -------------- |
+| `GET /list/:listId`    | All items with complete metadata  | JSON (wrapped) |
+| `GET /list/:listId/tv` | TV shows only (Sonarr-compatible) | JSON array     |
+
+### Admin Endpoints
+
+| Endpoint                  | Description                   |
+| ------------------------- | ----------------------------- |
+| `GET /`                   | API documentation             |
+| `GET /health`             | Health check with cache stats |
+| `POST /admin/cache/clear` | Clear cached TMDB lookups     |
 
 ### User IDs and List IDs
 
@@ -62,6 +82,11 @@ bun start
 
 Find your User ID by going to your IMDB profile - it's in the URL.
 
+### Output Formats
+
+- **Base Format** (`/watchlist/:userId`, `/list/:listId`): JSON object with metadata including `totalItems`, `offset`, `limit`, `items[]`
+- **Sonarr Format** (`/tv`): JSON array with `TvdbId`, `Title`, `TmdbId`, `ImdbId`
+
 ## Configuring Sonarr
 
 1. Open Sonarr → **Settings** → **Import Lists**
@@ -69,7 +94,7 @@ Find your User ID by going to your IMDB profile - it's in the URL.
 1. Choose **Custom List**
 1. Configure:
    - **Name**: IMDB Watchlist
-   - **URL**: `http://your-server:3000/watchlist/ur12345678` (your user ID)
+   - **URL**: `http://your-server:3000/watchlist/ur12345678/tv` (your user ID)
    - **Monitor**: Your preference
    - **Quality Profile**: Your preference
 1. Click **Save**
@@ -83,11 +108,38 @@ IMDB Watchlist → Parse HTML → Filter TV Shows → TMDB API → TVDB IDs → 
 ```
 
 1. **Fetch**: Scrapes your public IMDB watchlist page
-2. **Filter**: Identifies TV shows (series, miniseries, documentaries)
+2. **Filter**: Identifies TV shows (series, miniseries)
 3. **Convert**: Uses TMDB's free API to convert IMDB IDs → TVDB IDs
 4. **Return**: Returns JSON in the exact format Sonarr expects
 
-### Sonarr Custom List Format
+### Output Format Examples
+
+**Base Format** (`/watchlist/:userId`, `/list/:listId`):
+
+```json
+{
+  "userId": "ur12345678",
+  "totalItems": 42,
+  "offset": 0,
+  "limit": null,
+  "items": [
+    {
+      "imdbId": "tt0137523",
+      "title": "Fight Club",
+      "type": "movie",
+      "year": 1999
+    },
+    {
+      "imdbId": "tt14452776",
+      "title": "The Bear",
+      "type": "tvSeries",
+      "year": 2022
+    }
+  ]
+}
+```
+
+**Sonarr Custom List Format** (`/tv`):
 
 ```json
 [
@@ -110,12 +162,16 @@ IMDB Watchlist → Parse HTML → Filter TV Shows → TMDB API → TVDB IDs → 
 
 ## Query Parameters
 
-### Pagination (all watchlist endpoints)
+### Pagination (all endpoints)
 
 - `limit` - Maximum number of items to return
 - `offset` - Number of items to skip (for pagination)
 
-Example: `GET /watchlist/ur12345678?limit=50&offset=0`
+Examples:
+
+- `GET /watchlist/ur12345678/tv?limit=50&offset=0`
+- `GET /list/ls036390872/tv?limit=20&offset=40`
+- `GET /watchlist/ur12345678?limit=100`
 
 ## Deployment
 
@@ -168,7 +224,9 @@ location /imdb/ {
 }
 ```
 
-Then use: `https://yourserver.com/imdb/watchlist/ur12345678`
+Then use:
+
+- Sonarr: `https://yourserver.com/imdb/watchlist/ur12345678/tv`
 
 ## Requirements
 
@@ -213,11 +271,12 @@ Set the `TMDB_API_KEY` environment variable.
 
 - Check that your watchlist is public
 - Verify your user ID is correct (starts with `ur`)
-- Try `/watchlist/:userId` to see all parsed items
+- Try the base endpoint (`/watchlist/:userId`) to see all parsed items
+- Ensure you're using the `/tv` endpoint for Sonarr
 
-### Missing shows
+### Missing shows or movies
 
-Some very new or obscure shows may not have TVDB IDs. Check `/watchlist/:userId/tv` to see what TV shows were found, or `/watchlist/:userId` to see all items.
+Some very new or obscure titles may not have TVDB/TMDB IDs. Use the base endpoint to see what was found from IMDB, then check if those titles exist on TMDB.
 
 ## License
 

@@ -331,10 +331,3 @@ export function filterPotentialTVShows(items: IMDBItem[]): IMDBItem[] {
     (item) => item.type === 'tvSeries' || item.type === 'tvMiniSeries' || item.type === 'unknown'
   );
 }
-
-/**
- * Filter IMDB items to only Movies
- */
-export function filterMovies(items: IMDBItem[]): IMDBItem[] {
-  return items.filter((item) => item.type === 'movie');
-}
