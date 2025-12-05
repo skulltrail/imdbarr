@@ -45,15 +45,15 @@ npm start
 
 ## API Endpoints
 
-| Endpoint                        | Description                                          |
-| ------------------------------- | ---------------------------------------------------- |
-| `GET /`                         | API documentation                                    |
-| `GET /health`                   | Health check with cache stats                        |
-| `GET /watchlist/:userId`        | **Main endpoint** - Sonarr-compatible JSON (TV only) |
-| `GET /watchlist/:userId/tv`     | Raw TV show items from watchlist                     |
-| `GET /watchlist/:userId/movies` | Raw movie items from watchlist                       |
-| `GET /list/:listId`             | IMDB list in Sonarr format (TV only)                 |
-| `POST /admin/cache/clear`       | Clear cached TMDB lookups                            |
+| Endpoint                        | Description                                       |
+| ------------------------------- | ------------------------------------------------- |
+| `GET /`                         | API documentation                                 |
+| `GET /health`                   | Health check with cache stats                     |
+| `GET /watchlist/:userId`        | All items from watchlist (movies, TV shows, etc.) |
+| `GET /watchlist/:userId/tv`     | TV shows only (filtered from watchlist)           |
+| `GET /watchlist/:userId/movies` | Movies only (filtered from watchlist)             |
+| `GET /list/:listId`             | IMDB custom list in Sonarr format (TV only)       |
+| `POST /admin/cache/clear`       | Clear cached TMDB lookups                         |
 
 ### User IDs and List IDs
 
@@ -110,7 +110,12 @@ IMDB Watchlist → Parse HTML → Filter TV Shows → TMDB API → TVDB IDs → 
 
 ## Query Parameters
 
-None at this time. The service includes only items identified as TV series or mini-series.
+### Pagination (all watchlist endpoints)
+
+- `limit` - Maximum number of items to return
+- `offset` - Number of items to skip (for pagination)
+
+Example: `GET /watchlist/ur12345678?limit=50&offset=0`
 
 ## Deployment
 

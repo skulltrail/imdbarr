@@ -15,19 +15,13 @@ const IMDB_BASE_URL = 'https://www.imdb.com';
  * Parse a watchlist ID from various input formats
  * Supports: ur12345678, ls12345678, full URLs
  */
-export function parseListId(input: string): { type: 'user' | 'list'; id: string } | null {
+export function parseListId(input: string): { type: 'user' | 'list' | 'url'; id: string } | null {
   input = input.trim();
 
   // Handle full URLs
   if (input.includes('imdb.com')) {
-    const userMatch = input.match(/\/user\/(ur\d+)/);
-    if (userMatch) {
-      return { type: 'user', id: userMatch[1] };
-    }
-    const listMatch = input.match(/\/list\/(ls\d+)/);
-    if (listMatch) {
-      return { type: 'list', id: listMatch[1] };
-    }
+    // Preserve full URL (may include query like start=)
+    return { type: 'url', id: input };
   }
 
   // Handle direct IDs
@@ -44,9 +38,11 @@ export function parseListId(input: string): { type: 'user' | 'list'; id: string 
 /**
  * Build the URL to fetch the watchlist/list data
  */
-function buildListUrl(listInfo: { type: 'user' | 'list'; id: string }): string {
+function buildListUrl(listInfo: { type: 'user' | 'list' | 'url'; id: string }): string {
+  if (listInfo.type === 'url') {
+    return listInfo.id;
+  }
   if (listInfo.type === 'user') {
-    // Use detail view to ensure full metadata is rendered server-side
     return `${IMDB_BASE_URL}/user/${listInfo.id}/watchlist?view=detail`;
   }
   return `${IMDB_BASE_URL}/list/${listInfo.id}?view=detail`;
@@ -69,9 +65,14 @@ function parseIMDBType(metadata: string): IMDBItem['type'] {
   if (normalized.includes('video')) return 'video';
   if (normalized.includes('short')) return 'short';
   // Check for episode count pattern like "6 eps" or "22 eps"
-  if (/\d+\s*eps?/i.test(metadata)) return 'tvSeries';
+  if (/\b\d+\s*eps?\b/i.test(metadata)) return 'tvSeries';
+  // Check for full word 'episode(s)'
+  if (/\bepisodes?\b/i.test(metadata)) return 'tvSeries';
+  // Check for 'season(s)'
+  if (/\bseasons?\b/i.test(metadata)) return 'tvSeries';
   // Duration patterns like "1h 35m" or "2h" indicate movies
-  if (/\d+h(\s*\d+m)?$/.test(metadata.trim()) || /^\d+m$/.test(metadata.trim())) return 'movie';
+  if (/\b\d+h(\s*\d+m)?\b/.test(metadata) && !/\beps?|episodes?|seasons?\b/i.test(metadata))
+    return 'movie';
 
   return 'unknown';
 }
@@ -91,52 +92,28 @@ export async function fetchIMDBList(listIdOrUrl: string): Promise<IMDBItem[]> {
   const baseUrl = buildListUrl(listInfo);
   console.log(`[IMDB] Fetching list from: ${baseUrl}`);
 
-  const allItems: IMDBItem[] = [];
-  const seen = new Set<string>();
-  const maxPages = 10; // safety cap
-
   try {
-    for (let page = 1; page <= maxPages; page++) {
-      const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}page=${page}`;
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        },
-      });
+    const response = await fetch(baseUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+      },
+    });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(`Watchlist not found. Make sure the watchlist is public.`);
-        }
-        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Watchlist not found. Make sure the watchlist is public.`);
       }
-
-      const html = await response.text();
-      const pageItems = parseIMDBListPage(html);
-
-      // Stop if page has no items (end of pagination)
-      if (pageItems.length === 0) {
-        break;
-      }
-
-      for (const it of pageItems) {
-        if (!seen.has(it.imdbId)) {
-          seen.add(it.imdbId);
-          allItems.push(it);
-        }
-      }
-
-      // Detect absence of pagination "Next" link to break early
-      if (!/href="[^"]*page=\d+"[^>]*>\s*Next\s*</i.test(html) && page > 1) {
-        break;
-      }
+      throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
     }
 
-    console.log(`[IMDB] Aggregated ${allItems.length} items across pages`);
-    return allItems;
+    const html = await response.text();
+    const items = parseIMDBListPage(html);
+
+    console.log(`[IMDB] Parsed ${items.length} items from watchlist`);
+    return items;
   } catch (error) {
     console.error(`[IMDB] Failed to fetch list:`, error);
     throw error;
@@ -151,7 +128,94 @@ function parseIMDBListPage(html: string): IMDBItem[] {
   const items: IMDBItem[] = [];
   const seenIds = new Set<string>();
 
-  // Parse from the modern IMDB page structure
+  // 1) Prefer extracting from Next.js bootstrap data when available (often contains full list)
+  try {
+    const nextDataRaw =
+      $('script#__NEXT_DATA__').first().text().trim() ||
+      // fallback: inline assignment variant
+      $('script')
+        .toArray()
+        .map((el) => $(el).text())
+        .find((t) => /__NEXT_DATA__\s*=\s*\{/.test(t)) ||
+      '';
+
+    if (nextDataRaw) {
+      const jsonText = nextDataRaw.startsWith('{')
+        ? nextDataRaw
+        : nextDataRaw.substring(nextDataRaw.indexOf('{'));
+
+      try {
+        const root = JSON.parse(jsonText);
+
+        const pushItem = (node: any) => {
+          const id: string | undefined =
+            (typeof node?.id === 'string' && /^tt\d+$/.test(node.id) ? node.id : undefined) ||
+            (typeof node?.const === 'string' && /^tt\d+$/.test(node.const)
+              ? node.const
+              : undefined) ||
+            undefined;
+          if (!id || seenIds.has(id)) return;
+
+          const title: string | undefined =
+            node?.titleText?.text ||
+            node?.originalTitleText?.text ||
+            node?.title ||
+            node?.name ||
+            undefined;
+
+          let rawType: string | undefined =
+            (typeof node?.titleType?.id === 'string' ? node.titleType.id : undefined) ||
+            (typeof node?.titleType === 'string' ? node.titleType : undefined) ||
+            (typeof node?.['@type'] === 'string' ? node['@type'] : undefined);
+
+          let type: IMDBItem['type'] = 'unknown';
+          if (rawType) {
+            const t = String(rawType).toLowerCase();
+            if (t.includes('tvmini')) type = 'tvMiniSeries';
+            else if (t.includes('tvseries') || t === 'tvseries') type = 'tvSeries';
+            else if (t.includes('movie') || t === 'feature') type = 'movie';
+            else if (t.includes('special')) type = 'tvSpecial';
+            else if (t.includes('video')) type = 'video';
+            else if (t.includes('short')) type = 'short';
+          }
+
+          const year: number | undefined =
+            (typeof node?.releaseYear?.year === 'number' ? node.releaseYear.year : undefined) ||
+            (typeof node?.year === 'number' ? node.year : undefined) ||
+            (typeof node?.releaseDate === 'string' && /^(\d{4})/.test(node.releaseDate)
+              ? parseInt(node.releaseDate.substring(0, 4))
+              : undefined);
+
+          if (title) {
+            items.push({ imdbId: id, title, type, year });
+            seenIds.add(id);
+          }
+        };
+
+        const walk = (node: any) => {
+          if (!node) return;
+          if (typeof node !== 'object') return;
+          if (Array.isArray(node)) {
+            for (const el of node) walk(el);
+            return;
+          }
+          // Object
+          try {
+            pushItem(node);
+          } catch {}
+          for (const key of Object.keys(node)) {
+            try {
+              walk((node as any)[key]);
+            } catch {}
+          }
+        };
+
+        walk(root);
+      } catch {}
+    }
+  } catch {}
+
+  // 2) Parse from the modern IMDB page structure (anchors)
   // Look for links to titles and their metadata
   // New UI: target container items first
   $('[data-testid="list-page-mc-list-item"] a[href*="/title/tt"], a[href*="/title/tt"]').each(
@@ -197,28 +261,43 @@ function parseIMDBListPage(html: string): IMDBItem[] {
     }
   );
 
-  // If we didn't find items through links, try JSON-LD
-  if (items.length === 0) {
-    $('script[type="application/ld+json"]').each((_, element) => {
-      try {
-        const data = JSON.parse($(element).text());
-        if (data['@type'] === 'ItemList' && Array.isArray(data.itemListElement)) {
-          for (const item of data.itemListElement) {
-            const itemData = item.item;
-            if (itemData?.url) {
-              const imdbIdMatch = itemData.url.match(/\/title\/(tt\d+)/);
-              if (imdbIdMatch && !seenIds.has(imdbIdMatch[1])) {
-                seenIds.add(imdbIdMatch[1]);
-                const atype = (itemData['@type'] || '').toString().toLowerCase();
-                const type: IMDBItem['type'] = atype.includes('tvminiseries')
-                  ? 'tvMiniSeries'
-                  : atype.includes('tvseries')
-                    ? 'tvSeries'
-                    : 'unknown';
+  // 3) Always parse JSON-LD to enrich type detection and fill any missing items
+  $('script[type="application/ld+json"]').each((_, element) => {
+    try {
+      const data = JSON.parse($(element).text());
+      if (data['@type'] === 'ItemList' && Array.isArray(data.itemListElement)) {
+        for (const entry of data.itemListElement) {
+          const itemData = entry.item;
+          if (itemData?.url) {
+            const imdbIdMatch = itemData.url.match(/\/title\/(tt\d+)/);
+            if (imdbIdMatch) {
+              const imdbId = imdbIdMatch[1];
+              const atype = (itemData['@type'] || '').toString().toLowerCase();
+              const mappedType: IMDBItem['type'] = atype.includes('tvminiseries')
+                ? 'tvMiniSeries'
+                : atype.includes('tvseries')
+                  ? 'tvSeries'
+                  : atype.includes('movie')
+                    ? 'movie'
+                    : atype.includes('tvepisode')
+                      ? 'unknown'
+                      : 'unknown';
+
+              const existing = items.find((it) => it.imdbId === imdbId);
+              if (existing) {
+                // Prefer JSON-LD type when provided (it is authoritative)
+                if (mappedType !== 'unknown') {
+                  existing.type = mappedType;
+                }
+                if (!existing.year && itemData.datePublished) {
+                  existing.year = parseInt(itemData.datePublished.substring(0, 4));
+                }
+              } else if (!seenIds.has(imdbId)) {
+                seenIds.add(imdbId);
                 items.push({
-                  imdbId: imdbIdMatch[1],
+                  imdbId,
                   title: itemData.name || 'Unknown',
-                  type,
+                  type: mappedType,
                   year: itemData.datePublished
                     ? parseInt(itemData.datePublished.substring(0, 4))
                     : undefined,
@@ -227,11 +306,11 @@ function parseIMDBListPage(html: string): IMDBItem[] {
             }
           }
         }
-      } catch {
-        // Ignore JSON parse errors
       }
-    });
-  }
+    } catch {
+      // Ignore JSON parse errors
+    }
+  });
 
   console.log(`[IMDB] Parsed ${items.length} items from list`);
   return items;

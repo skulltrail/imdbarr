@@ -33,23 +33,23 @@ app.get('/health', (_req: Request, res: Response) => {
 app.get('/', (_req: Request, res: Response) => {
   const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
   res.json({
-    name: 'IMDB Watchlist to Sonarr Bridge',
-    description: 'Converts IMDB watchlists to Sonarr-compatible custom list format',
+    name: 'IMDB API for *arr Apps',
+    description: 'Fetch and filter IMDB watchlists for Sonarr, Radarr, and other automation',
     version: '0.1.0',
     endpoints: {
       watchlist: {
         url: `${baseUrl}/watchlist/{userId}`,
-        description: 'Get raw IMDB watchlist data (all items)',
+        description: 'Get all items from IMDB watchlist (movies, TV shows, etc.)',
         example: `${baseUrl}/watchlist/ur12345678`,
       },
       tvShows: {
         url: `${baseUrl}/watchlist/{userId}/tv`,
-        description: 'Get only TV shows from IMDB watchlist',
+        description: 'Get only TV shows from IMDB watchlist (filtered)',
         example: `${baseUrl}/watchlist/ur12345678/tv`,
       },
       movies: {
         url: `${baseUrl}/watchlist/{userId}/movies`,
-        description: 'Get only Movies from IMDB watchlist',
+        description: 'Get only movies from IMDB watchlist (filtered)',
         example: `${baseUrl}/watchlist/ur12345678/movies`,
       },
       list: {
@@ -66,22 +66,26 @@ app.get('/', (_req: Request, res: Response) => {
 });
 
 /**
- * Get raw IMDB watchlist
+ * Get all items from IMDB watchlist
+ * Returns movies, TV shows, specials, and all other content types
  */
 app.get('/watchlist/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const items = await fetchIMDBList(userId);
-    const tvShows = filterTVShows(items);
-    if (!isTMDBConfigured()) {
-      return res.status(503).json({
-        error: 'TMDB API key not configured',
-        message:
-          'Set TMDB_API_KEY env variable (in .env) to enable Sonarr format resolution to TVDB IDs.',
-      });
-    }
-    const sonarrSeries = await convertToSonarrFormat(tvShows);
-    res.json(sonarrSeries);
+    // Optional pagination via query params
+    const limit = req.query.limit ? Math.max(0, parseInt(String(req.query.limit), 10)) : undefined;
+    const offset = req.query.offset ? Math.max(0, parseInt(String(req.query.offset), 10)) : 0;
+    const paged =
+      typeof limit === 'number' && limit > 0 ? items.slice(offset, offset + limit) : items;
+
+    res.json({
+      userId,
+      totalItems: items.length,
+      offset,
+      limit: limit ?? null,
+      items: paged,
+    });
   } catch (error) {
     console.error('[API] Error fetching watchlist:', error);
     res.status(500).json({
@@ -92,19 +96,27 @@ app.get('/watchlist/:userId', async (req: Request, res: Response) => {
 });
 
 /**
- * Get TV shows only from IMDB watchlist
+ * Get TV shows from IMDB watchlist
+ * Filters to only TV series and mini-series
  */
 app.get('/watchlist/:userId/tv', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const allItems = await fetchIMDBList(userId);
     const tvShows = filterTVShows(allItems);
+    // Optional pagination via query params
+    const limit = req.query.limit ? Math.max(0, parseInt(String(req.query.limit), 10)) : undefined;
+    const offset = req.query.offset ? Math.max(0, parseInt(String(req.query.offset), 10)) : 0;
+    const paged =
+      typeof limit === 'number' && limit > 0 ? tvShows.slice(offset, offset + limit) : tvShows;
 
     res.json({
       userId,
       totalItems: allItems.length,
       tvShowCount: tvShows.length,
-      items: tvShows,
+      offset,
+      limit: limit ?? null,
+      items: paged,
     });
   } catch (error) {
     console.error('[API] Error fetching watchlist:', error);
@@ -116,19 +128,27 @@ app.get('/watchlist/:userId/tv', async (req: Request, res: Response) => {
 });
 
 /**
- * Get Movies only from IMDB watchlist
+ * Get movies from IMDB watchlist
+ * Filters to only movies
  */
 app.get('/watchlist/:userId/movies', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const allItems = await fetchIMDBList(userId);
     const movies = filterMovies(allItems);
+    // Optional pagination via query params
+    const limit = req.query.limit ? Math.max(0, parseInt(String(req.query.limit), 10)) : undefined;
+    const offset = req.query.offset ? Math.max(0, parseInt(String(req.query.offset), 10)) : 0;
+    const paged =
+      typeof limit === 'number' && limit > 0 ? movies.slice(offset, offset + limit) : movies;
 
     res.json({
       userId,
       totalItems: allItems.length,
       movieCount: movies.length,
-      items: movies,
+      offset,
+      limit: limit ?? null,
+      items: paged,
     });
   } catch (error) {
     console.error('[API] Error fetching watchlist:', error);
@@ -196,7 +216,7 @@ app.listen(PORT, () => {
 ║                                                                ║
 ║  Endpoints:                                                    ║
 ║    GET /                         - API documentation           ║
-║    GET /watchlist/:userId        - Raw IMDB watchlist          ║
+║    GET /watchlist/:userId        - All watchlist items         ║
 ║    GET /watchlist/:userId/tv     - TV shows only               ║
 ║    GET /watchlist/:userId/movies - Movies only                 ║
 ║    GET /list/:listId             - IMDB list                   ║
