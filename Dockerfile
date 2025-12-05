@@ -1,18 +1,18 @@
-FROM node:20-alpine
+FROM oven/bun:1-alpine
 
 WORKDIR /app
 
-# Copy package files and install
-COPY package*.json ./
-RUN npm ci
+# Copy package files and install all dependencies (including dev)
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
 
 # Copy source and build
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN bun run build
 
-# Prune dev dependencies
-RUN npm prune --production
+# Remove dev dependencies for production
+RUN rm -rf node_modules && bun install --frozen-lockfile --production
 
 ENV NODE_ENV=production
 EXPOSE 3000
