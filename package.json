@@ -1,7 +1,8 @@
 {
   "name": "imdbarr",
   "version": "0.2.0",
-  "description": "IMDB API for *arr - converts IMDB watchlists to Sonarr-compatible custom list format",
+  "description": "IMDB API for Sonarr - converts IMDB watchlists to Sonarr-compatible custom list format",
+  "packageManager": "bun@1.x",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

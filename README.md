@@ -25,7 +25,7 @@ git clone https://github.com/skulltrail/imdbarr.git
 cd imdbarr
 
 # Install dependencies
-npm install
+bun install
 
 # Configure environment
 cp .env.example .env
@@ -36,11 +36,11 @@ cp .env.example .env
 
 ```bash
 # Development mode (with hot reload)
-npm run dev
+bun run dev
 
 # Production mode
-npm run build
-npm start
+bun run build
+bun start
 ```
 
 ## API Endpoints
@@ -135,7 +135,7 @@ CMD ["node", "dist/index.js"]
 Build and run:
 
 ```bash
-npm run build
+bun run build
 docker build -t imdbarr .
 docker run -d -p 3000:3000 -e TMDB_API_KEY=your_key imdbarr
 ```
@@ -184,10 +184,10 @@ Use the included `check.ts` script to test IMDB parsing without starting the ser
 
 ```bash
 # Test with your user ID
-npx tsx scripts/check.ts ur12345678
+bunx tsx scripts/check.ts ur12345678
 
 # Or use the default test user
-npx tsx scripts/check.ts
+bunx tsx scripts/check.ts
 ```
 
 This script will:
