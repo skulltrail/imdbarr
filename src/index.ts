@@ -35,7 +35,7 @@ app.get('/', (_req: Request, res: Response) => {
   res.json({
     name: 'IMDB API for Sonarr',
     description: 'Convert IMDB watchlists to Sonarr-compatible custom list format',
-    version: '0.3.0',
+    version: '0.4.0',
     endpoints: {
       watchlist: {
         url: `${baseUrl}/watchlist/{userId}`,
