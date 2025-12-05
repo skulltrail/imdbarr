@@ -178,14 +178,14 @@ Examples:
 ### Docker
 
 ```dockerfile
-FROM node:20-alpine
+FROM oven/bun:1-alpine
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile --production
 COPY dist ./dist
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["bun", "run", "dist/index.js"]
 ```
 
 Build and run:
@@ -233,6 +233,7 @@ Then use:
 - **Public Watchlist**: Your IMDB watchlist must be set to PUBLIC
   - Go to IMDB → Account Settings → Privacy → Watchlist → Public
 - **TMDB API Key**: Free, no credit card required
+- **Bun Runtime**: This project uses [Bun](https://bun.sh) instead of npm/Node.js for faster installs, builds, and runtime performance. Bun is a drop-in replacement that's significantly faster while maintaining full npm compatibility
 
 ## Troubleshooting
 

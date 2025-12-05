@@ -1,5 +1,5 @@
 import { parseListId } from '../src/imdb.js';
-import { filterTVShows, filterMovies } from '../src/imdb.js';
+import { filterTVShows } from '../src/imdb.js';
 import * as cheerio from 'cheerio';
 import * as fs from 'fs/promises';
 
@@ -144,7 +144,6 @@ async function main() {
 
   const items = parseIMDBListPage(html);
   const tv = filterTVShows(items);
-  const movies = filterMovies(items);
   const typeCounts = items.reduce<Record<string, number>>((acc, it) => {
     acc[it.type] = (acc[it.type] || 0) + 1;
     return acc;
@@ -156,10 +155,8 @@ async function main() {
         id,
         totalItems: items.length,
         tvShowCount: tv.length,
-        movieCount: movies.length,
         typeCounts,
         tvTitles: tv.map((t) => t.title),
-        movieTitles: movies.map((t) => t.title).slice(0, 10),
       },
       null,
       2
