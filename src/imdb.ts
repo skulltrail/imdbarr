@@ -51,7 +51,7 @@ function buildListUrl(listInfo: { type: 'user' | 'list' | 'url'; id: string }): 
 /**
  * Determine the content type from IMDB's metadata
  */
-function parseIMDBType(metadata: string): IMDBItem['type'] {
+export function parseIMDBType(metadata: string): IMDBItem['type'] {
   const normalized = metadata.toLowerCase();
 
   if (normalized.includes('tv series')) return 'tvSeries';
@@ -123,7 +123,7 @@ export async function fetchIMDBList(listIdOrUrl: string): Promise<IMDBItem[]> {
 /**
  * Parse IMDB list page HTML and extract items
  */
-function parseIMDBListPage(html: string): IMDBItem[] {
+export function parseIMDBListPage(html: string): IMDBItem[] {
   const $ = cheerio.load(html);
   const items: IMDBItem[] = [];
   const seenIds = new Set<string>();
