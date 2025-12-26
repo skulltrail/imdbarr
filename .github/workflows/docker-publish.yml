@@ -95,13 +95,6 @@ jobs:
             MINOR=0
             PATCH=0
             BUMP_TYPE="major"
-          elif echo "$COMMIT_MSG" | grep -qiE '^(fix|hotfix)'; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-            BUMP_TYPE="minor"
-          elif echo "$COMMIT_MSG" | grep -qiE '^(chore|docs|style|test|ci)'; then
-            PATCH=$((PATCH + 1))
-            BUMP_TYPE="patch"
           elif echo "$COMMIT_MSG" | grep -qiE '^(feat|feature)'; then
             MINOR=$((MINOR + 1))
             PATCH=0
