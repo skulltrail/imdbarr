@@ -10,6 +10,7 @@ A lightweight API that bridges the gap between IMDB watchlists and Sonarr. Conve
 - 💾 **Smart Caching** - Caches TMDB lookups for 24 hours
 - 🎯 **Direct Integration** - Returns exactly what Sonarr expects
 - 📊 **Complete Metadata** - Access full IMDB data via base endpoints
+- 📑 **Large List Support** - Automatically fetches all pages for lists with 250+ items
 
 ## Quick Start
 
@@ -162,16 +163,50 @@ IMDB Watchlist → Parse HTML → Filter TV Shows → TMDB API → TVDB IDs → 
 
 ## Query Parameters
 
-### Pagination (all endpoints)
+### Pagination for Large Lists
 
-- `limit` - Maximum number of items to return
-- `offset` - Number of items to skip (for pagination)
+IMDB displays lists in pages of 250 items. By default, the API fetches **all pages** and merges the results. You can control this behavior:
 
-Examples:
+| Parameter  | Default | Description                                                           |
+| ---------- | ------- | --------------------------------------------------------------------- |
+| `fetchAll` | `true`  | Fetch all pages and merge results. Set to `false` for single page.   |
+| `maxItems` | -       | Maximum total items to fetch (works when `fetchAll=true`)             |
+| `page`     | -       | Fetch specific page (1-indexed, only when `fetchAll=false`)           |
 
-- `GET /watchlist/ur12345678/tv?limit=50&offset=0`
-- `GET /list/ls036390872/tv?limit=20&offset=40`
-- `GET /watchlist/ur12345678?limit=100`
+**Examples:**
+
+```bash
+# Fetch entire list - all pages merged (default)
+GET /list/ls123456789
+
+# Limit to first 500 items
+GET /list/ls123456789?maxItems=500
+
+# Get only the first page (250 items max)
+GET /list/ls123456789?fetchAll=false
+
+# Get page 3 specifically
+GET /list/ls123456789?fetchAll=false&page=3
+```
+
+### Result Slicing
+
+After fetching, you can slice the final result set:
+
+| Parameter | Description                        |
+| --------- | ---------------------------------- |
+| `limit`   | Maximum number of items to return  |
+| `offset`  | Number of items to skip            |
+
+**Examples:**
+
+```bash
+# Get items 51-100 from the full list
+GET /watchlist/ur12345678?limit=50&offset=50
+
+# Combine with maxItems: fetch up to 1000, return items 101-200
+GET /list/ls123456789?maxItems=1000&limit=100&offset=100
+```
 
 ## Deployment
 

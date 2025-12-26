@@ -78,9 +78,154 @@ export function parseIMDBType(metadata: string): IMDBItem['type'] {
 }
 
 /**
- * Fetch and parse items from an IMDB watchlist or list
+ * Options for fetching IMDB lists
  */
-export async function fetchIMDBList(listIdOrUrl: string): Promise<IMDBItem[]> {
+export interface FetchIMDBListOptions {
+  /**
+   * Whether to fetch all pages of the list (default: true)
+   * When true, automatically fetches all pages and merges the results
+   * When false, fetches only the first page (up to 250 items)
+   */
+  fetchAll?: boolean;
+
+  /**
+   * Maximum number of items to fetch (only used when fetchAll is true)
+   * If not specified, fetches all items
+   */
+  maxItems?: number;
+
+  /**
+   * Specific page to fetch (1-indexed, only used when fetchAll is false)
+   * Each page contains up to 250 items
+   */
+  page?: number;
+}
+
+/**
+ * Result from fetching an IMDB list with pagination info
+ */
+export interface FetchIMDBListResult {
+  items: IMDBItem[];
+  totalItems: number;
+  currentPage: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
+const ITEMS_PER_PAGE = 250;
+
+/**
+ * Extract total item count from IMDB list page HTML
+ */
+export function extractListMetadata(html: string): { totalItems: number; listTitle?: string } {
+  const $ = cheerio.load(html);
+  let totalItems = 0;
+  let listTitle: string | undefined;
+
+  // Try to extract from various page elements
+  // Pattern: "1-250 of 523" or "523 titles"
+  const pageText = $('body').text();
+
+  // Match patterns like "1-250 of 523" or "of 523 titles"
+  const ofMatch = pageText.match(/of\s+([\d,]+)\s*(?:titles?|items?)?/i);
+  if (ofMatch) {
+    totalItems = parseInt(ofMatch[1].replace(/,/g, ''), 10);
+  }
+
+  // Match pattern like "523 titles" (standalone)
+  if (!totalItems) {
+    const titlesMatch = pageText.match(/([\d,]+)\s+titles?/i);
+    if (titlesMatch) {
+      totalItems = parseInt(titlesMatch[1].replace(/,/g, ''), 10);
+    }
+  }
+
+  // Try to get from meta or structured data
+  if (!totalItems) {
+    try {
+      const nextDataRaw = $('script#__NEXT_DATA__').first().text().trim();
+      if (nextDataRaw) {
+        const data = JSON.parse(nextDataRaw);
+        // Navigate to find item count in various possible locations
+        const findItemCount = (obj: any): number => {
+          if (!obj || typeof obj !== 'object') return 0;
+          if (typeof obj.totalCount === 'number') return obj.totalCount;
+          if (typeof obj.total === 'number') return obj.total;
+          if (obj.list?.total) return obj.list.total;
+          if (obj.titles?.total) return obj.titles.total;
+          for (const key of Object.keys(obj)) {
+            const found = findItemCount(obj[key]);
+            if (found > 0) return found;
+          }
+          return 0;
+        };
+        totalItems = findItemCount(data);
+      }
+    } catch {}
+  }
+
+  // Extract list title
+  listTitle = $('h1').first().text().trim() ||
+              $('[data-testid="list-page-title"]').first().text().trim() ||
+              undefined;
+
+  return { totalItems, listTitle };
+}
+
+/**
+ * Fetch a single page of an IMDB list
+ */
+async function fetchIMDBListPage(baseUrl: string, start: number = 1): Promise<{ html: string; items: IMDBItem[] }> {
+  // Add start parameter for pagination
+  const url = new URL(baseUrl);
+  if (start > 1) {
+    url.searchParams.set('start', String(start));
+  }
+  // Ensure we're in detail view for better parsing
+  if (!url.searchParams.has('view')) {
+    url.searchParams.set('view', 'detail');
+  }
+
+  const finalUrl = url.toString();
+  console.log(`[IMDB] Fetching page from: ${finalUrl}`);
+
+  const response = await fetch(finalUrl, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(`Watchlist not found. Make sure the watchlist is public.`);
+    }
+    throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+  }
+
+  const html = await response.text();
+  const items = parseIMDBListPage(html);
+
+  return { html, items };
+}
+
+/**
+ * Fetch and parse items from an IMDB watchlist or list with pagination support
+ *
+ * @param listIdOrUrl - IMDB list ID (ur12345678, ls12345678) or full URL
+ * @param options - Pagination options (fetchAll, maxItems, page)
+ * @returns Array of IMDB items (when using simple mode) or detailed result with pagination info
+ */
+export async function fetchIMDBList(listIdOrUrl: string, options?: FetchIMDBListOptions): Promise<IMDBItem[]>;
+export async function fetchIMDBList(listIdOrUrl: string, options: FetchIMDBListOptions & { detailed: true }): Promise<FetchIMDBListResult>;
+export async function fetchIMDBList(
+  listIdOrUrl: string,
+  options: FetchIMDBListOptions & { detailed?: boolean } = {}
+): Promise<IMDBItem[] | FetchIMDBListResult> {
+  const { fetchAll = true, maxItems, page, detailed = false } = options;
+
   const listInfo = parseListId(listIdOrUrl);
 
   if (!listInfo) {
@@ -90,30 +235,103 @@ export async function fetchIMDBList(listIdOrUrl: string): Promise<IMDBItem[]> {
   }
 
   const baseUrl = buildListUrl(listInfo);
-  console.log(`[IMDB] Fetching list from: ${baseUrl}`);
+  console.log(`[IMDB] Fetching list from: ${baseUrl} (fetchAll: ${fetchAll})`);
 
   try {
-    const response = await fetch(baseUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-    });
+    // Fetch the first page to get metadata
+    const startPosition = page ? (page - 1) * ITEMS_PER_PAGE + 1 : 1;
+    const { html: firstHtml, items: firstPageItems } = await fetchIMDBListPage(baseUrl, startPosition);
+    const { totalItems } = extractListMetadata(firstHtml);
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new Error(`Watchlist not found. Make sure the watchlist is public.`);
+    // Calculate total pages
+    const effectiveTotal = totalItems || firstPageItems.length;
+    const totalPages = Math.ceil(effectiveTotal / ITEMS_PER_PAGE);
+
+    console.log(`[IMDB] List metadata: totalItems=${effectiveTotal}, totalPages=${totalPages}`);
+
+    // If not fetching all, or only one page exists, return first page
+    if (!fetchAll || page !== undefined || totalPages <= 1) {
+      console.log(`[IMDB] Returning single page with ${firstPageItems.length} items`);
+
+      if (detailed) {
+        return {
+          items: firstPageItems,
+          totalItems: effectiveTotal,
+          currentPage: page || 1,
+          totalPages,
+          hasMore: (page || 1) < totalPages,
+        };
       }
-      throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+      return firstPageItems;
     }
 
-    const html = await response.text();
-    const items = parseIMDBListPage(html);
+    // Fetch all remaining pages
+    const allItems = [...firstPageItems];
+    const seenIds = new Set(allItems.map(item => item.imdbId));
+    let currentPage = 2;
 
-    console.log(`[IMDB] Parsed ${items.length} items from watchlist`);
-    return items;
+    while (currentPage <= totalPages) {
+      // Check if we've hit the maxItems limit
+      if (maxItems && allItems.length >= maxItems) {
+        console.log(`[IMDB] Reached maxItems limit (${maxItems}), stopping`);
+        break;
+      }
+
+      const startPos = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+      console.log(`[IMDB] Fetching page ${currentPage}/${totalPages} (start=${startPos})`);
+
+      try {
+        const { items: pageItems } = await fetchIMDBListPage(baseUrl, startPos);
+
+        // Add only new items (avoid duplicates)
+        let addedCount = 0;
+        for (const item of pageItems) {
+          if (!seenIds.has(item.imdbId)) {
+            seenIds.add(item.imdbId);
+            allItems.push(item);
+            addedCount++;
+
+            // Check maxItems limit
+            if (maxItems && allItems.length >= maxItems) {
+              break;
+            }
+          }
+        }
+
+        console.log(`[IMDB] Page ${currentPage}: added ${addedCount} new items (total: ${allItems.length})`);
+
+        // If no new items were added, we've likely reached the end
+        if (addedCount === 0) {
+          console.log(`[IMDB] No new items found, stopping pagination`);
+          break;
+        }
+      } catch (pageError) {
+        console.error(`[IMDB] Failed to fetch page ${currentPage}:`, pageError);
+        // Continue with what we have
+        break;
+      }
+
+      currentPage++;
+
+      // Small delay to be respectful to IMDB servers
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    // Apply maxItems limit if specified
+    const finalItems = maxItems ? allItems.slice(0, maxItems) : allItems;
+
+    console.log(`[IMDB] Fetched ${finalItems.length} total items from ${currentPage - 1} pages`);
+
+    if (detailed) {
+      return {
+        items: finalItems,
+        totalItems: effectiveTotal,
+        currentPage: 1,
+        totalPages,
+        hasMore: false, // We fetched all
+      };
+    }
+    return finalItems;
   } catch (error) {
     console.error(`[IMDB] Failed to fetch list:`, error);
     throw error;

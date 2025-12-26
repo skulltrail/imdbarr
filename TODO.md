@@ -3,6 +3,7 @@
 Based on community feedback and common feature requests for Sonarr list tools:
 
 - [ ] **Bi-directional Sync**: Ability to add shows to the IMDb watchlist if they are added directly in Sonarr.
+  - Delete shows from Sonarr if they are removed from the watchlist and if monitor is set to "Pilot" or "First Season"
 - [ ] **Filtering**: Add support for filtering shows based on:
   - Genre
   - IMDb Rating (min/max)

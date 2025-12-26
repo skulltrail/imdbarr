@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { parseListId, parseIMDBType, parseIMDBListPage, filterTVShows, filterPotentialTVShows } from '../src/imdb';
+import { describe, expect, test, mock, beforeAll, afterAll } from 'bun:test';
+import { parseListId, parseIMDBType, parseIMDBListPage, filterTVShows, filterPotentialTVShows, extractListMetadata, fetchIMDBList } from '../src/imdb';
+import type { IMDBItem } from '../src/types';
 
 describe('IMDB Utils', () => {
     describe('parseListId', () => {
@@ -73,31 +74,6 @@ describe('IMDB Utils', () => {
 
     describe('parseIMDBListPage', () => {
         test('parses items from NEXT_DATA json', () => {
-            const html = `
-                <html>
-                <script id="__NEXT_DATA__" type="application/json">
-                    {
-                        "props": {
-                            "pageProps": {
-                                "mainColumnData": {
-                                    "predefinedList": {
-                                        "titleListItemSearch": {
-                                            "edges": [
-                                                { "node": { "id": "tt1234567", "titleText": { "text": "Test Series" }, "titleType": { "id": "tvSeries" }, "releaseYear": { "year": 2023 } } }
-                                            ]
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                </script>
-                </html>
-            `;
-            // NOTE: The implementation of parseIMDBListPage recursively walks the JSON.
-            // The structure above is a simplified plausible guess.
-            // Let's create a structure closer to what the walker expects: ANY object with id/const, title, etc.
-
              const htmlSimple = `
                 <html>
                 <script id="__NEXT_DATA__">
@@ -125,6 +101,184 @@ describe('IMDB Utils', () => {
             expect(results).toHaveLength(2);
             expect(results[0]).toEqual({ imdbId: 'tt1234567', title: 'Test Series', type: 'tvSeries', year: 2023 });
             expect(results[1]).toEqual({ imdbId: 'tt7654321', title: 'Test Movie', type: 'movie', year: 2020 });
+        });
+    });
+
+    describe('extractListMetadata', () => {
+        test('extracts total from "of X titles" pattern', () => {
+            const html = `
+                <html><body>
+                    <div>Showing 1-250 of 1,523 titles</div>
+                </body></html>
+            `;
+            const { totalItems } = extractListMetadata(html);
+            expect(totalItems).toBe(1523);
+        });
+
+        test('extracts total from "X titles" pattern', () => {
+            const html = `
+                <html><body>
+                    <div>523 titles in this list</div>
+                </body></html>
+            `;
+            const { totalItems } = extractListMetadata(html);
+            expect(totalItems).toBe(523);
+        });
+
+        test('extracts total from NEXT_DATA', () => {
+            const html = `
+                <html>
+                <script id="__NEXT_DATA__">
+                    {
+                        "props": {
+                            "pageProps": {
+                                "mainColumnData": {
+                                    "list": {
+                                        "total": 1000
+                                    }
+                                }
+                            }
+                        }
+                    }
+                </script>
+                </html>
+            `;
+            const { totalItems } = extractListMetadata(html);
+            expect(totalItems).toBe(1000);
+        });
+
+        test('returns 0 when no count found', () => {
+            const html = `<html><body><div>Some random content</div></body></html>`;
+            const { totalItems } = extractListMetadata(html);
+            expect(totalItems).toBe(0);
+        });
+    });
+
+    describe('fetchIMDBList pagination', () => {
+        // Helper to generate mock HTML page with items
+        function generateMockPage(startIndex: number, count: number, totalItems: number): string {
+            const items = [];
+            for (let i = 0; i < count; i++) {
+                const idx = startIndex + i;
+                items.push({
+                    id: `tt${String(idx).padStart(7, '0')}`,
+                    titleText: { text: `Title ${idx}` },
+                    titleType: { id: idx % 3 === 0 ? 'tvSeries' : 'movie' },
+                    releaseYear: { year: 2020 + (idx % 5) }
+                });
+            }
+            return `
+                <html>
+                <body>Showing ${startIndex}-${startIndex + count - 1} of ${totalItems} titles</body>
+                <script id="__NEXT_DATA__">
+                    { "items": ${JSON.stringify(items)} }
+                </script>
+                </html>
+            `;
+        }
+
+        // Store original fetch
+        const originalFetch = globalThis.fetch;
+        let fetchCallCount = 0;
+        let lastFetchUrls: string[] = [];
+
+        beforeAll(() => {
+            // Mock fetch for testing
+            globalThis.fetch = mock(async (url: string | URL | Request) => {
+                fetchCallCount++;
+                const urlStr = url.toString();
+                lastFetchUrls.push(urlStr);
+
+                // Parse the start parameter
+                const urlObj = new URL(urlStr);
+                const start = parseInt(urlObj.searchParams.get('start') || '1', 10);
+
+                // Total of 1000 items, 250 per page
+                const totalItems = 1000;
+                const itemsPerPage = 250;
+                const pageStart = start;
+                const itemsOnPage = Math.min(itemsPerPage, totalItems - pageStart + 1);
+
+                if (itemsOnPage <= 0) {
+                    // Empty page
+                    return new Response(generateMockPage(pageStart, 0, totalItems), { status: 200 });
+                }
+
+                return new Response(generateMockPage(pageStart, itemsOnPage, totalItems), { status: 200 });
+            }) as typeof fetch;
+        });
+
+        afterAll(() => {
+            globalThis.fetch = originalFetch;
+        });
+
+        test('fetchAll=true fetches all 1000 items across 4 pages', async () => {
+            fetchCallCount = 0;
+            lastFetchUrls = [];
+
+            const items = await fetchIMDBList('ls123456789', { fetchAll: true });
+
+            // Should have fetched 4 pages (1000 items / 250 per page)
+            expect(fetchCallCount).toBe(4);
+            expect(items.length).toBe(1000);
+
+            // Check first and last items
+            expect(items[0].imdbId).toBe('tt0000001');
+            expect(items[999].imdbId).toBe('tt0001000');
+        });
+
+        test('fetchAll=false returns only first page (250 items)', async () => {
+            fetchCallCount = 0;
+            lastFetchUrls = [];
+
+            const items = await fetchIMDBList('ls123456789', { fetchAll: false });
+
+            // Should have fetched only 1 page
+            expect(fetchCallCount).toBe(1);
+            expect(items.length).toBe(250);
+
+            // Check it's the first page
+            expect(items[0].imdbId).toBe('tt0000001');
+            expect(items[249].imdbId).toBe('tt0000250');
+        });
+
+        test('maxItems=500 limits to 500 items', async () => {
+            fetchCallCount = 0;
+            lastFetchUrls = [];
+
+            const items = await fetchIMDBList('ls123456789', { fetchAll: true, maxItems: 500 });
+
+            // Should have fetched 2 pages (500 items / 250 per page)
+            expect(fetchCallCount).toBe(2);
+            expect(items.length).toBe(500);
+        });
+
+        test('page=2 with fetchAll=false fetches only page 2', async () => {
+            fetchCallCount = 0;
+            lastFetchUrls = [];
+
+            const items = await fetchIMDBList('ls123456789', { fetchAll: false, page: 2 });
+
+            // Should have fetched only 1 page
+            expect(fetchCallCount).toBe(1);
+
+            // URL should have start=251 (page 2)
+            expect(lastFetchUrls[0]).toContain('start=251');
+
+            // Items should be from page 2 (251-500)
+            expect(items[0].imdbId).toBe('tt0000251');
+            expect(items.length).toBe(250);
+        });
+
+        test('default behavior (no options) fetches all pages', async () => {
+            fetchCallCount = 0;
+            lastFetchUrls = [];
+
+            const items = await fetchIMDBList('ls123456789');
+
+            // Should have fetched all 4 pages
+            expect(fetchCallCount).toBe(4);
+            expect(items.length).toBe(1000);
         });
     });
 });
