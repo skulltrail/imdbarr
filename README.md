@@ -167,11 +167,11 @@ IMDB Watchlist → Parse HTML → Filter TV Shows → TMDB API → TVDB IDs → 
 
 IMDB displays lists in pages of 250 items. By default, the API fetches **all pages** and merges the results. You can control this behavior:
 
-| Parameter  | Default | Description                                                           |
-| ---------- | ------- | --------------------------------------------------------------------- |
-| `fetchAll` | `true`  | Fetch all pages and merge results. Set to `false` for single page.   |
-| `maxItems` | -       | Maximum total items to fetch (works when `fetchAll=true`)             |
-| `page`     | -       | Fetch specific page (1-indexed, only when `fetchAll=false`)           |
+| Parameter  | Default | Description                                                        |
+| ---------- | ------- | ------------------------------------------------------------------ |
+| `fetchAll` | `true`  | Fetch all pages and merge results. Set to `false` for single page. |
+| `maxItems` | -       | Maximum total items to fetch (works when `fetchAll=true`)          |
+| `page`     | -       | Fetch specific page (1-indexed, only when `fetchAll=false`)        |
 
 **Examples:**
 
@@ -193,10 +193,10 @@ GET /list/ls123456789?fetchAll=false&page=3
 
 After fetching, you can slice the final result set:
 
-| Parameter | Description                        |
-| --------- | ---------------------------------- |
-| `limit`   | Maximum number of items to return  |
-| `offset`  | Number of items to skip            |
+| Parameter | Description                       |
+| --------- | --------------------------------- |
+| `limit`   | Maximum number of items to return |
+| `offset`  | Number of items to skip           |
 
 **Examples:**
 

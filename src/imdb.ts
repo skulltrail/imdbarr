@@ -122,52 +122,48 @@ export function extractListMetadata(html: string): { totalItems: number; listTit
   let totalItems = 0;
   let listTitle: string | undefined;
 
-  // Try to extract from various page elements
-  // Pattern: "1-250 of 523" or "523 titles"
-  const pageText = $('body').text();
+  try {
+    const nextDataRaw = $('script#__NEXT_DATA__').first().text().trim();
+    if (nextDataRaw) {
+      const data = JSON.parse(nextDataRaw);
 
-  // Match patterns like "1-250 of 523" or "of 523 titles"
-  const ofMatch = pageText.match(/of\s+([\d,]+)\s*(?:titles?|items?)?/i);
-  if (ofMatch) {
-    totalItems = parseInt(ofMatch[1].replace(/,/g, ''), 10);
-  }
+      // Try to get from the known path first: mainColumnData.list.titleListItemSearch.total
+      const listData = data?.props?.pageProps?.mainColumnData?.list;
+      if (listData?.titleListItemSearch?.total) {
+        totalItems = listData.titleListItemSearch.total;
+        listTitle = listData.name?.text || listData.name?.originalText;
+      }
 
-  // Match pattern like "523 titles" (standalone)
-  if (!totalItems) {
-    const titlesMatch = pageText.match(/([\d,]+)\s+titles?/i);
-    if (titlesMatch) {
-      totalItems = parseInt(titlesMatch[1].replace(/,/g, ''), 10);
-    }
-  }
-
-  // Try to get from meta or structured data
-  if (!totalItems) {
-    try {
-      const nextDataRaw = $('script#__NEXT_DATA__').first().text().trim();
-      if (nextDataRaw) {
-        const data = JSON.parse(nextDataRaw);
-        // Navigate to find item count in various possible locations
-        const findItemCount = (obj: any): number => {
+      // Fallback: search recursively for total/totalCount (but avoid episode counts)
+      if (!totalItems) {
+        const findListTotal = (obj: any, path = ''): number => {
           if (!obj || typeof obj !== 'object') return 0;
-          if (typeof obj.totalCount === 'number') return obj.totalCount;
-          if (typeof obj.total === 'number') return obj.total;
-          if (obj.list?.total) return obj.list.total;
-          if (obj.titles?.total) return obj.titles.total;
+          // Skip episode data which also has 'total' fields
+          if (path.includes('episodes')) return 0;
+          // Look for titleListItemSearch.total specifically
+          if (obj.titleListItemSearch?.total) return obj.titleListItemSearch.total;
+          // Look for list-level totalCount
+          if (path.includes('list') && typeof obj.totalCount === 'number') return obj.totalCount;
           for (const key of Object.keys(obj)) {
-            const found = findItemCount(obj[key]);
-            if (found > 0) return found;
+            if (typeof obj[key] === 'object') {
+              const found = findListTotal(obj[key], path + '.' + key);
+              if (found > 0) return found;
+            }
           }
           return 0;
         };
-        totalItems = findItemCount(data);
+        totalItems = findListTotal(data);
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
-  // Extract list title
-  listTitle = $('h1').first().text().trim() ||
-              $('[data-testid="list-page-title"]').first().text().trim() ||
-              undefined;
+  // Extract list title if not already set
+  if (!listTitle) {
+    listTitle =
+      $('h1').first().text().trim() ||
+      $('[data-testid="list-page-title"]').first().text().trim() ||
+      undefined;
+  }
 
   return { totalItems, listTitle };
 }
@@ -175,11 +171,14 @@ export function extractListMetadata(html: string): { totalItems: number; listTit
 /**
  * Fetch a single page of an IMDB list
  */
-async function fetchIMDBListPage(baseUrl: string, start: number = 1): Promise<{ html: string; items: IMDBItem[] }> {
-  // Add start parameter for pagination
+async function fetchIMDBListPage(
+  baseUrl: string,
+  page: number = 1
+): Promise<{ html: string; items: IMDBItem[] }> {
+  // Add page parameter for pagination (IMDB uses page=N, not start=N)
   const url = new URL(baseUrl);
-  if (start > 1) {
-    url.searchParams.set('start', String(start));
+  if (page > 1) {
+    url.searchParams.set('page', String(page));
   }
   // Ensure we're in detail view for better parsing
   if (!url.searchParams.has('view')) {
@@ -195,6 +194,7 @@ async function fetchIMDBListPage(baseUrl: string, start: number = 1): Promise<{ 
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.5',
+      Referer: 'https://www.google.com/',
     },
   });
 
@@ -218,8 +218,14 @@ async function fetchIMDBListPage(baseUrl: string, start: number = 1): Promise<{ 
  * @param options - Pagination options (fetchAll, maxItems, page)
  * @returns Array of IMDB items (when using simple mode) or detailed result with pagination info
  */
-export async function fetchIMDBList(listIdOrUrl: string, options?: FetchIMDBListOptions): Promise<IMDBItem[]>;
-export async function fetchIMDBList(listIdOrUrl: string, options: FetchIMDBListOptions & { detailed: true }): Promise<FetchIMDBListResult>;
+export async function fetchIMDBList(
+  listIdOrUrl: string,
+  options?: FetchIMDBListOptions
+): Promise<IMDBItem[]>;
+export async function fetchIMDBList(
+  listIdOrUrl: string,
+  options: FetchIMDBListOptions & { detailed: true }
+): Promise<FetchIMDBListResult>;
 export async function fetchIMDBList(
   listIdOrUrl: string,
   options: FetchIMDBListOptions & { detailed?: boolean } = {}
@@ -239,8 +245,11 @@ export async function fetchIMDBList(
 
   try {
     // Fetch the first page to get metadata
-    const startPosition = page ? (page - 1) * ITEMS_PER_PAGE + 1 : 1;
-    const { html: firstHtml, items: firstPageItems } = await fetchIMDBListPage(baseUrl, startPosition);
+    const requestedPage = page || 1;
+    const { html: firstHtml, items: firstPageItems } = await fetchIMDBListPage(
+      baseUrl,
+      requestedPage
+    );
     const { totalItems } = extractListMetadata(firstHtml);
 
     // Calculate total pages
@@ -267,7 +276,7 @@ export async function fetchIMDBList(
 
     // Fetch all remaining pages
     const allItems = [...firstPageItems];
-    const seenIds = new Set(allItems.map(item => item.imdbId));
+    const seenIds = new Set(allItems.map((item) => item.imdbId));
     let currentPage = 2;
 
     while (currentPage <= totalPages) {
@@ -277,11 +286,10 @@ export async function fetchIMDBList(
         break;
       }
 
-      const startPos = (currentPage - 1) * ITEMS_PER_PAGE + 1;
-      console.log(`[IMDB] Fetching page ${currentPage}/${totalPages} (start=${startPos})`);
+      console.log(`[IMDB] Fetching page ${currentPage}/${totalPages}`);
 
       try {
-        const { items: pageItems } = await fetchIMDBListPage(baseUrl, startPos);
+        const { items: pageItems } = await fetchIMDBListPage(baseUrl, currentPage);
 
         // Add only new items (avoid duplicates)
         let addedCount = 0;
@@ -298,7 +306,9 @@ export async function fetchIMDBList(
           }
         }
 
-        console.log(`[IMDB] Page ${currentPage}: added ${addedCount} new items (total: ${allItems.length})`);
+        console.log(
+          `[IMDB] Page ${currentPage}: added ${addedCount} new items (total: ${allItems.length})`
+        );
 
         // If no new items were added, we've likely reached the end
         if (addedCount === 0) {
@@ -314,7 +324,7 @@ export async function fetchIMDBList(
       currentPage++;
 
       // Small delay to be respectful to IMDB servers
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
     // Apply maxItems limit if specified

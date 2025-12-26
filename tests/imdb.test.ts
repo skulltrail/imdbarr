@@ -105,26 +105,6 @@ describe('IMDB Utils', () => {
     });
 
     describe('extractListMetadata', () => {
-        test('extracts total from "of X titles" pattern', () => {
-            const html = `
-                <html><body>
-                    <div>Showing 1-250 of 1,523 titles</div>
-                </body></html>
-            `;
-            const { totalItems } = extractListMetadata(html);
-            expect(totalItems).toBe(1523);
-        });
-
-        test('extracts total from "X titles" pattern', () => {
-            const html = `
-                <html><body>
-                    <div>523 titles in this list</div>
-                </body></html>
-            `;
-            const { totalItems } = extractListMetadata(html);
-            expect(totalItems).toBe(523);
-        });
-
         test('extracts total from NEXT_DATA', () => {
             const html = `
                 <html>
@@ -134,7 +114,9 @@ describe('IMDB Utils', () => {
                             "pageProps": {
                                 "mainColumnData": {
                                     "list": {
-                                        "total": 1000
+                                        "titleListItemSearch": {
+                                            "total": 1000
+                                        }
                                     }
                                 }
                             }
@@ -155,7 +137,7 @@ describe('IMDB Utils', () => {
     });
 
     describe('fetchIMDBList pagination', () => {
-        // Helper to generate mock HTML page with items
+        // Helper to generate mock HTML page with items - uses NEXT_DATA structure
         function generateMockPage(startIndex: number, count: number, totalItems: number): string {
             const items = [];
             for (let i = 0; i < count; i++) {
@@ -167,12 +149,25 @@ describe('IMDB Utils', () => {
                     releaseYear: { year: 2020 + (idx % 5) }
                 });
             }
+            // Must include proper NEXT_DATA structure with titleListItemSearch.total for metadata extraction
+            const nextData = {
+                props: {
+                    pageProps: {
+                        mainColumnData: {
+                            list: {
+                                titleListItemSearch: {
+                                    total: totalItems
+                                }
+                            }
+                        }
+                    }
+                },
+                items: items
+            };
             return `
                 <html>
-                <body>Showing ${startIndex}-${startIndex + count - 1} of ${totalItems} titles</body>
-                <script id="__NEXT_DATA__">
-                    { "items": ${JSON.stringify(items)} }
-                </script>
+                <body>Mock IMDB list page</body>
+                <script id="__NEXT_DATA__">${JSON.stringify(nextData)}</script>
                 </html>
             `;
         }
@@ -183,20 +178,20 @@ describe('IMDB Utils', () => {
         let lastFetchUrls: string[] = [];
 
         beforeAll(() => {
-            // Mock fetch for testing
+            // Mock fetch for testing - use page=N parameter (IMDB's actual format)
             globalThis.fetch = mock(async (url: string | URL | Request) => {
                 fetchCallCount++;
                 const urlStr = url.toString();
                 lastFetchUrls.push(urlStr);
 
-                // Parse the start parameter
+                // Parse the page parameter (IMDB uses page=1, page=2, etc.)
                 const urlObj = new URL(urlStr);
-                const start = parseInt(urlObj.searchParams.get('start') || '1', 10);
+                const pageNum = parseInt(urlObj.searchParams.get('page') || '1', 10);
 
                 // Total of 1000 items, 250 per page
                 const totalItems = 1000;
                 const itemsPerPage = 250;
-                const pageStart = start;
+                const pageStart = (pageNum - 1) * itemsPerPage + 1;
                 const itemsOnPage = Math.min(itemsPerPage, totalItems - pageStart + 1);
 
                 if (itemsOnPage <= 0) {
@@ -262,8 +257,8 @@ describe('IMDB Utils', () => {
             // Should have fetched only 1 page
             expect(fetchCallCount).toBe(1);
 
-            // URL should have start=251 (page 2)
-            expect(lastFetchUrls[0]).toContain('start=251');
+            // URL should have page=2
+            expect(lastFetchUrls[0]).toContain('page=2');
 
             // Items should be from page 2 (251-500)
             expect(items[0].imdbId).toBe('tt0000251');

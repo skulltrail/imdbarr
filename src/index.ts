@@ -70,7 +70,8 @@ app.get('/', (_req: Request, res: Response) => {
         sonarr: '/tv endpoints return Sonarr-compatible format with TVDB IDs',
       },
       pagination: {
-        fetchAll: 'By default, all pages are fetched and merged. Use ?fetchAll=false to get only the first page (250 items)',
+        fetchAll:
+          'By default, all pages are fetched and merged. Use ?fetchAll=false to get only the first page (250 items)',
         maxItems: 'Use ?maxItems=N to limit total items fetched (works with fetchAll=true)',
         page: 'Use ?page=N to fetch a specific page (1-indexed, only when fetchAll=false)',
         legacy: 'Also supports ?limit=N&offset=N for slicing the final result set',
@@ -92,8 +93,11 @@ app.get('/watchlist/:userId', async (req: Request, res: Response) => {
 
     // Pagination options
     const fetchAll = req.query.fetchAll !== 'false'; // Default: true
-    const maxItems = req.query.maxItems ? Math.max(1, parseInt(String(req.query.maxItems), 10)) : undefined;
-    const page = !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
+    const maxItems = req.query.maxItems
+      ? Math.max(1, parseInt(String(req.query.maxItems), 10))
+      : undefined;
+    const page =
+      !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
 
     const items = await fetchIMDBList(userId, { fetchAll, maxItems, page });
 
@@ -135,8 +139,11 @@ app.get('/watchlist/:userId/tv', async (req: Request, res: Response) => {
 
     // Pagination options
     const fetchAll = req.query.fetchAll !== 'false'; // Default: true
-    const maxItems = req.query.maxItems ? Math.max(1, parseInt(String(req.query.maxItems), 10)) : undefined;
-    const page = !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
+    const maxItems = req.query.maxItems
+      ? Math.max(1, parseInt(String(req.query.maxItems), 10))
+      : undefined;
+    const page =
+      !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
 
     const allItems = await fetchIMDBList(userId, { fetchAll, maxItems, page });
     const tvShows = filterTVShows(allItems);
@@ -174,8 +181,11 @@ app.get('/list/:listId', async (req: Request, res: Response) => {
 
     // Pagination options
     const fetchAll = req.query.fetchAll !== 'false'; // Default: true
-    const maxItems = req.query.maxItems ? Math.max(1, parseInt(String(req.query.maxItems), 10)) : undefined;
-    const page = !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
+    const maxItems = req.query.maxItems
+      ? Math.max(1, parseInt(String(req.query.maxItems), 10))
+      : undefined;
+    const page =
+      !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
 
     const items = await fetchIMDBList(listId, { fetchAll, maxItems, page });
 
@@ -217,8 +227,11 @@ app.get('/list/:listId/tv', async (req: Request, res: Response) => {
 
     // Pagination options
     const fetchAll = req.query.fetchAll !== 'false'; // Default: true
-    const maxItems = req.query.maxItems ? Math.max(1, parseInt(String(req.query.maxItems), 10)) : undefined;
-    const page = !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
+    const maxItems = req.query.maxItems
+      ? Math.max(1, parseInt(String(req.query.maxItems), 10))
+      : undefined;
+    const page =
+      !fetchAll && req.query.page ? Math.max(1, parseInt(String(req.query.page), 10)) : undefined;
 
     const items = await fetchIMDBList(listId, { fetchAll, maxItems, page });
     const tvShows = filterTVShows(items);
